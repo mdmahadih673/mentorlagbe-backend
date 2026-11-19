@@ -262,7 +262,60 @@ app.post('/applications', async (req, res) => {
 });
 
 
+app.patch('/tutor/applications/:applicationId/status', async (req, res) => {
+    try {
+        const { applicationId } = req.params;
+        const { teacherId, status } = req.body;
+        const allowedStatuses = ['pending', 'accepted', 'rejected'];
 
+        if (!ObjectId.isValid(applicationId)) {
+            return res.status(400).send({ success: false, message: 'Invalid application ID' });
+        }
+        if (!teacherId || !allowedStatuses.includes(status)) {
+            return res.status(400).send({ success: false, message: 'A tutor ID and valid status are required' });
+        }
+
+        const result = await applications.updateOne(
+            { _id: new ObjectId(applicationId), teacherId },
+            { $set: { status, updatedAt: new Date() } }
+        );
+
+        if (!result.matchedCount) {
+            return res.status(404).send({ success: false, message: 'Application not found' });
+        }
+
+        res.send({ success: true, message: 'Application status updated', status });
+    } catch (error) {
+        res.status(500).send({ success: false, message: 'Failed to update application status' });
+    }
+});
+
+app.delete('/tutor/applications/:applicationId', async (req, res) => {
+    try {
+        const { applicationId } = req.params;
+        const { teacherId } = req.body;
+
+        if (!ObjectId.isValid(applicationId)) {
+            return res.status(400).send({ success: false, message: 'Invalid application ID' });
+        }
+        if (!teacherId) {
+            return res.status(400).send({ success: false, message: 'A tutor ID is required' });
+        }
+
+        const result = await applications.deleteOne({
+            _id: new ObjectId(applicationId),
+            teacherId
+        });
+
+        if (!result.deletedCount) {
+            return res.status(404).send({ success: false, message: 'Application not found' });
+        }
+
+        res.send({ success: true, message: 'Application deleted' });
+    } catch (error) {
+        res.status(500).send({ success: false, message: 'Failed to delete application' });
+    }
+});
 
 app.get('/', (req, res) => {
     res.send('Hello World!')
