@@ -38,6 +38,18 @@ app.get('/users', async (req, res) => {
     res.send(results);
 });
 
+app.patch('/users/:id/role', async (req, res) => {
+    const id = req.params.id
+    const query = { _id: new ObjectId(id0) }
+    const updateDoc = {
+        $set: {
+            role: req.body.role
+        }
+    }
+    const result = await users.updateOne(query, updateDoc)
+    res.send(result)
+})
+
 
 app.post('/tuition', async (req, res) => {
     try {
