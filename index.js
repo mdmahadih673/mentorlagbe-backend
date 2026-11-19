@@ -144,6 +144,24 @@ app.patch('/admin/tuitions/:id/status', async (req, res) => {
 });
 
 
+app.delete('/admin/tuitions/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!ObjectId.isValid(id)) {
+            return res.status(400).send({ success: false, message: 'Invalid tuition ID' });
+        }
+
+        const result = await tuitions.deleteOne({ _id: new ObjectId(id) });
+        if (!result.deletedCount) {
+            return res.status(404).send({ success: false, message: 'Tuition not found' });
+        }
+
+        await applications.deleteMany({ tuitionId: id });
+        res.send({ success: true, message: 'Tuition and related applications deleted' });
+    } catch (error) {
+        res.status(500).send({ success: false, message: 'Failed to delete tuition' });
+    }
+});
 
 
 app.post('/tuition', async (req, res) => {
