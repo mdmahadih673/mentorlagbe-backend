@@ -190,6 +190,25 @@ app.get('/tutor/applications/:teacherId', async (req, res) => {
     }
 });
 
+app.get('/student/applications/:studentId', async (req, res) => {
+    try {
+        const result = await applications
+            .find({ studentId: req.params.studentId })
+            .sort({ createdAt: -1 })
+            .toArray();
+        const tutorIds = [...new Set(result.map((application) => application.teacherId).filter(Boolean))];
+        const tutors = await users.find({ _id: { $in: tutorIds } }).project({ name: 1 }).toArray();
+        const tutorNames = new Map(tutors.map((tutor) => [String(tutor._id), tutor.name]));
+        res.send(result.map((application) => ({
+            ...application,
+            tutorName: tutorNames.get(application.teacherId) || application.tutorName || ''
+        })));
+    } catch (error) {
+        res.status(500).send({ success: false, message: 'Failed to get student applications' });
+    }
+});
+
+
 
 
 app.get('/', (req, res) => {
