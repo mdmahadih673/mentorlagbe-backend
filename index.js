@@ -38,17 +38,112 @@ app.get('/users', async (req, res) => {
     res.send(results);
 });
 
-app.patch('/users/:id/role', async (req, res) => {
-    const id = req.params.id
-    const query = { _id: new ObjectId(id0) }
-    const updateDoc = {
-        $set: {
-            role: req.body.role
+
+
+app.delete('/users/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!ObjectId.isValid(id)) {
+            return res.status(400).send({ success: false, message: 'Invalid user ID' });
         }
+
+        const userObjectId = new ObjectId(id);
+        const user = await users.findOne({ _id: userObjectId });
+        if (!user) {
+            return res.status(404).send({ success: false, message: 'User not found' });
+        }
+
+        const ownedTuitions = await tuitions
+            .find({ teacherId: id }, { projection: { _id: 1 } })
+            .toArray();
+        const tuitionIds = ownedTuitions.map((tuition) => String(tuition._id));
+
+        await Promise.all([
+            database.collection('session').deleteMany({ userId: userObjectId }),
+            database.collection('account').deleteMany({ userId: userObjectId }),
+            applications.deleteMany({
+                $or: [
+                    { studentId: id },
+                    { teacherId: id },
+                    ...(tuitionIds.length ? [{ tuitionId: { $in: tuitionIds } }] : []),
+                ],
+            }),
+            tuitions.deleteMany({ teacherId: id }),
+            users.deleteOne({ _id: userObjectId }),
+        ]);
+
+        res.send({ success: true, message: 'User and related records deleted' });
+    } catch (error) {
+        res.status(500).send({
+            success: false,
+            message: 'Failed to delete user',
+            error: error.message,
+        });
     }
-    const result = await users.updateOne(query, updateDoc)
-    res.send(result)
+});
+
+
+
+app.patch('/users/:id/role', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { role } = req.body;
+        const allowedRoles = ['student', 'tutor', 'admin'];
+
+        if (!ObjectId.isValid(id)) {
+            return res.status(400).send({ success: false, message: 'Invalid user ID' });
+        }
+        if (!allowedRoles.includes(role)) {
+            return res.status(400).send({ success: false, message: 'A valid role is required' });
+        }
+
+        const result = await users.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { role, updatedAt: new Date() }, $unset: { userType: '' } }
+        );
+
+        if (!result.matchedCount) {
+            return res.status(404).send({ success: false, message: 'User not found' });
+        }
+
+        res.send({ success: true, message: 'User role updated', role });
+    } catch (error) {
+        res.status(500).send({
+            success: false,
+            message: 'Failed to update user role',
+            error: error.message,
+        });
+    }
 })
+
+app.patch('/admin/tuitions/:id/status', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+        const allowedStatuses = ['pending', 'approved', 'rejected'];
+
+        if (!ObjectId.isValid(id)) {
+            return res.status(400).send({ success: false, message: 'Invalid tuition ID' });
+        }
+        if (!allowedStatuses.includes(status)) {
+            return res.status(400).send({ success: false, message: 'A valid listing status is required' });
+        }
+
+        const result = await tuitions.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { approvalStatus: status, updatedAt: new Date() } }
+        );
+        if (!result.matchedCount) {
+            return res.status(404).send({ success: false, message: 'Tuition not found' });
+        }
+
+        res.send({ success: true, message: 'Tuition status updated', status });
+    } catch (error) {
+        res.status(500).send({ success: false, message: 'Failed to update tuition status' });
+    }
+});
+
+
 
 
 app.post('/tuition', async (req, res) => {
