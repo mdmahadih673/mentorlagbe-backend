@@ -208,6 +208,59 @@ app.get('/student/applications/:studentId', async (req, res) => {
     }
 });
 
+app.post('/applications', async (req, res) => {
+    try {
+        const { tuitionId, studentId, studentName, studentEmail, message, preferredTime } = req.body;
+
+        if (!ObjectId.isValid(tuitionId) || !studentId || !studentName) {
+            return res.status(400).send({
+                success: false,
+                message: 'Tuition ID, student ID, and student name are required'
+            });
+        }
+
+        const tuition = await tuitions.findOne({ _id: new ObjectId(tuitionId) });
+        if (!tuition) {
+            return res.status(404).send({ success: false, message: 'Tuition not found' });
+        }
+
+        const existingRequest = await applications.findOne({
+            tuitionId,
+            studentId,
+            status: { $in: ['pending', 'accepted'] }
+        });
+        if (existingRequest) {
+            return res.status(409).send({
+                success: false,
+                message: 'You already have an active request for this tuition'
+            });
+        }
+
+        const application = {
+            tuitionId,
+            teacherId: tuition.teacherId,
+            tuitionTitle: tuition.title,
+            subject: tuition.subject,
+            studentId,
+            studentName,
+            studentEmail: studentEmail || '',
+            message: typeof message === 'string' ? message.trim().slice(0, 1000) : '',
+            preferredTime: typeof preferredTime === 'string' ? preferredTime.trim().slice(0, 120) : '',
+            status: 'pending',
+            createdAt: new Date()
+        };
+
+        const result = await applications.insertOne(application);
+        res.status(201).send({
+            success: true,
+            message: 'Tuition request sent',
+            applicationId: result.insertedId.toString()
+        });
+    } catch (error) {
+        res.status(500).send({ success: false, message: 'Failed to send tuition request' });
+    }
+});
+
 
 
 
