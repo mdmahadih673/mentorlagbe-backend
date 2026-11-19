@@ -129,6 +129,69 @@ app.get('/my-tuitions/:teacherId', async (req, res) => {
     }
 });
 
+app.patch('/tuitions/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { teacherId, ...submittedFields } = req.body;
+        if (!ObjectId.isValid(id) || !teacherId) {
+            return res.status(400).send({ success: false, message: 'A valid tuition ID and tutor ID are required' });
+        }
+
+        const allowedFields = ['title', 'subject', 'classLevel', 'mode', 'meetingLink', 'location', 'daysPerWeek', 'preferredTime', 'monthlyFee', 'description', 'bannerUrl'];
+        const updates = Object.fromEntries(allowedFields.filter((key) => submittedFields[key] !== undefined).map((key) => [key, submittedFields[key]]));
+        if (!Object.keys(updates).length) {
+            return res.status(400).send({ success: false, message: 'No tuition fields were provided' });
+        }
+
+        const result = await tuitions.updateOne(
+            { _id: new ObjectId(id), teacherId },
+            { $set: { ...updates, approvalStatus: 'pending', updatedAt: new Date() } }
+        );
+        if (!result.matchedCount) {
+            return res.status(404).send({ success: false, message: 'Tuition not found or you do not own this post' });
+        }
+        res.send({ success: true, message: 'Tuition updated and sent for review' });
+    } catch (error) {
+        res.status(500).send({ success: false, message: 'Failed to update tuition' });
+    }
+});
+
+app.delete('/tuitions/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { teacherId } = req.body;
+        if (!ObjectId.isValid(id) || !teacherId) {
+            return res.status(400).send({ success: false, message: 'A valid tuition ID and tutor ID are required' });
+        }
+
+        const result = await tuitions.deleteOne({ _id: new ObjectId(id), teacherId });
+        if (!result.deletedCount) {
+            return res.status(404).send({ success: false, message: 'Tuition not found or you do not own this post' });
+        }
+        await applications.deleteMany({ tuitionId: id, teacherId });
+        res.send({ success: true, message: 'Tuition deleted' });
+    } catch (error) {
+        res.status(500).send({ success: false, message: 'Failed to delete tuition' });
+    }
+});
+
+app.get('/tutor/applications/:teacherId', async (req, res) => {
+    try {
+        const result = await applications
+            .find({ teacherId: req.params.teacherId })
+            .sort({ createdAt: -1 })
+            .toArray();
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({
+            success: false,
+            message: 'Failed to get tutor applications'
+        });
+    }
+});
+
+
+
 app.get('/', (req, res) => {
     res.send('Hello World!')
 })
