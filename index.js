@@ -549,6 +549,46 @@ app.get('/student/applications/:studentId', async (req, res) => {
     }
 });
 
+app.get('/student/application-count/:studentId', async (req, res) => {
+    try {
+        const { studentId } = req.params;
+        if (!ObjectId.isValid(studentId)) {
+            return res.status(400).send({ success: false, message: 'Invalid student ID' });
+        }
+
+        const user = await users.findOne(
+            { _id: new ObjectId(studentId), role: 'student' },
+            { projection: { plan: 1 } }
+        );
+        if (!user) return res.status(404).send({ success: false, message: 'Student not found' });
+
+        const [counts] = await applications.aggregate([
+            { $match: { studentId } },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: 1 },
+                    pending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
+                    accepted: { $sum: { $cond: [{ $eq: ['$status', 'accepted'] }, 1, 0] } },
+                    rejected: { $sum: { $cond: [{ $eq: ['$status', 'rejected'] }, 1, 0] } },
+                },
+            },
+            { $project: { _id: 0 } },
+        ]).toArray();
+
+        res.send({
+            success: true,
+            plan: user.plan === 'pro' ? 'pro' : 'free',
+            totalApplications: counts?.total || 0,
+            pendingApplications: counts?.pending || 0,
+            acceptedApplications: counts?.accepted || 0,
+            rejectedApplications: counts?.rejected || 0,
+        });
+    } catch (error) {
+        res.status(500).send({ success: false, message: 'Failed to get student application count' });
+    }
+});
+
 app.post('/applications', async (req, res) => {
     try {
         const { tuitionId, studentId, studentName, studentEmail, message, preferredTime } = req.body;
