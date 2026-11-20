@@ -36,6 +36,50 @@ const tuitions = database.collection("tuitions");
 const applications = database.collection("applications");
 const payments = database.collection("payments");
 
+async function getTransactionsByRole(role, res) {
+    try {
+        const paymentsForRole = await payments.find(
+            { userRole: { $regex: `^${role}$`, $options: 'i' } },
+            {
+                projection: {
+                    userId: 1,
+                    userName: 1,
+                    userEmail: 1,
+                    customer_email: 1,
+                    userRole: 1,
+                    planName: 1,
+                    amount: 1,
+                    currency: 1,
+                    transactionId: 1,
+                    payment_intent: 1,
+                    paymentStatus: 1,
+                    payment_status: 1,
+                    paidAt: 1,
+                    payment_date: 1,
+                    stripeSessionId: 1,
+                    sessionId: 1,
+                },
+            }
+        ).sort({ paidAt: -1, payment_date: -1 }).toArray();
+
+        const data = paymentsForRole.map((payment) => ({
+            ...payment,
+            userEmail: payment.userEmail || payment.customer_email || '',
+            transactionId: payment.transactionId || payment.payment_intent || '',
+            paymentStatus: payment.paymentStatus || payment.payment_status || '',
+            paidAt: payment.paidAt || payment.payment_date || null,
+            stripeSessionId: payment.stripeSessionId || payment.sessionId || '',
+        }));
+
+        res.send({ success: true, data, total: data.length });
+    } catch (error) {
+        res.status(500).send({ success: false, message: `Failed to get ${role} transactions` });
+    }
+}
+
+app.get('/admin/transactions/students', (req, res) => getTransactionsByRole('student', res));
+app.get('/admin/transactions/tutors', (req, res) => getTransactionsByRole('tutor', res));
+
 async function getTutorTuitionUsage(teacherId) {
     if (!ObjectId.isValid(teacherId)) return null;
 
@@ -571,18 +615,26 @@ app.get('/student/application-count/:studentId', async (req, res) => {
                     pending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
                     accepted: { $sum: { $cond: [{ $eq: ['$status', 'accepted'] }, 1, 0] } },
                     rejected: { $sum: { $cond: [{ $eq: ['$status', 'rejected'] }, 1, 0] } },
+                    active: { $sum: { $cond: [{ $in: ['$status', ['pending', 'accepted']] }, 1, 0] } },
                 },
             },
             { $project: { _id: 0 } },
         ]).toArray();
 
+        const isPro = user.plan === 'pro';
+        const limit = isPro ? null : 2;
+        const activeApplications = counts?.active || 0;
         res.send({
             success: true,
-            plan: user.plan === 'pro' ? 'pro' : 'free',
+            plan: isPro ? 'pro' : 'free',
             totalApplications: counts?.total || 0,
             pendingApplications: counts?.pending || 0,
             acceptedApplications: counts?.accepted || 0,
             rejectedApplications: counts?.rejected || 0,
+            activeApplications,
+            limit,
+            remaining: limit === null ? null : Math.max(0, limit - activeApplications),
+            canApply: limit === null || activeApplications < limit,
         });
     } catch (error) {
         res.status(500).send({ success: false, message: 'Failed to get student application count' });
@@ -600,6 +652,16 @@ app.post('/applications', async (req, res) => {
             });
         }
 
+        if (!ObjectId.isValid(studentId)) {
+            return res.status(400).send({ success: false, message: 'Invalid student ID' });
+        }
+
+        const student = await users.findOne(
+            { _id: new ObjectId(studentId), role: 'student' },
+            { projection: { plan: 1 } }
+        );
+        if (!student) return res.status(404).send({ success: false, message: 'Student not found' });
+
         const tuition = await tuitions.findOne({ _id: new ObjectId(tuitionId) });
         if (!tuition) {
             return res.status(404).send({ success: false, message: 'Tuition not found' });
@@ -615,6 +677,23 @@ app.post('/applications', async (req, res) => {
                 success: false,
                 message: 'You already have an active request for this tuition'
             });
+        }
+
+        if (student.plan !== 'pro') {
+            const activeCount = await applications.countDocuments({
+                studentId,
+                status: { $in: ['pending', 'accepted'] },
+            });
+            if (activeCount >= 2) {
+                return res.status(403).send({
+                    success: false,
+                    message: 'Free plan allows up to 2 active tuition requests. Upgrade to Pro to send more.',
+                    plan: 'free',
+                    limit: 2,
+                    remaining: 0,
+                    canApply: false,
+                });
+            }
         }
 
         const application = {
