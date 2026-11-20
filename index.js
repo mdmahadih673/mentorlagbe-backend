@@ -5,7 +5,9 @@ import { MongoClient, ObjectId } from 'mongodb';
 import Stripe from 'stripe'
 
 
-const stripe = new Stripe(process.env.sSTRIPE_SECRET_KEY)
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+if (!stripeSecretKey) throw new Error('Missing STRIPE_SECRET_KEY in backend .env');
+const stripe = new Stripe(stripeSecretKey);
 
 
 const app = express()
