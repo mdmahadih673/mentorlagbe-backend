@@ -29,7 +29,7 @@ const database = connectedClient.db("mentorlagbe");
 const users = database.collection("user");
 const tuitions = database.collection("tuitions");
 const applications = database.collection("applications");
-const payments = database.collection("payment");
+const payments = database.collection("payments");
 
 async function getTutorTuitionUsage(teacherId) {
     if (!ObjectId.isValid(teacherId)) return null;
