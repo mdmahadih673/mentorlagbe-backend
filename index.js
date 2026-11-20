@@ -192,6 +192,46 @@ app.post('/tuition', async (req, res) => {
     }
 });
 
+app.get('/tuitions/search', async (req, res) => {
+    try {
+        const { q = '', location = '', sort = 'newest' } = req.query;
+        const values = (key) => [].concat(req.query[key] || [])
+            .flatMap((value) => String(value).split(',')).map((value) => value.trim()).filter(Boolean);
+        const escape = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const filters = [];
+        const subjects = values('subject');
+        const modes = values('mode');
+        const classes = values('class').flatMap((value) => ({
+            'Class 6–8': ['Class 6', 'Class 7', 'Class 8'],
+            'Class 9–10': ['Class 9', 'Class 10'],
+        }[value] || [value]));
+        const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+        const pageSize = Math.min(50, Math.max(1, parseInt(req.query.pageSize, 10) || 6));
+
+        if (q) filters.push({ $or: ['title', 'subject', 'classLevel', 'tutorName']
+            .map((field) => ({ [field]: { $regex: escape(q), $options: 'i' } })) });
+        if (subjects.length) filters.push({ subject: { $in: subjects } });
+        if (modes.length) filters.push({ mode: { $in: modes } });
+        if (classes.length) filters.push({ classLevel: { $in: classes } });
+        if (location) filters.push(location.toLowerCase() === 'online'
+            ? { mode: 'Online' }
+            : { mode: 'Offline', location: { $regex: escape(location), $options: 'i' } });
+        const sortBy = { newest: { createdAt: -1 }, 'fee-low': { fee: 1 }, 'fee-high': { fee: -1 } }[sort] || { createdAt: -1 };
+        const [result] = await tuitions.aggregate([
+            ...(filters.length ? [{ $match: { $and: filters } }] : []),
+            { $addFields: { fee: { $convert: { input: '$monthlyFee', to: 'double', onError: 0, onNull: 0 } } } },
+            { $facet: {
+                data: [{ $sort: sortBy }, { $skip: (page - 1) * pageSize }, { $limit: pageSize }, { $unset: 'fee' }],
+                total: [{ $count: 'count' }],
+            } },
+        ]).toArray();
+        const total = result?.total?.[0]?.count || 0;
+        res.send({ success: true, data: result?.data || [], total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
+    } catch (error) {
+        res.status(500).send({ success: false, message: 'Failed to search tuition listings' });
+    }
+});
+
 app.get('/tuitions/:id', async (req, res) => {
     try {
         const id = req.params.id;
