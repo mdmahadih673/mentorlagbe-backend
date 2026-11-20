@@ -2,7 +2,10 @@ import express from 'express';
 import cors from 'cors';
 import 'dotenv/config'
 import { MongoClient, ObjectId } from 'mongodb';
+import Stripe from 'stripe'
 
+
+const stripe = new Stripe(process.env.sSTRIPE_SECRET_KEY)
 
 
 const app = express()
@@ -97,6 +100,65 @@ app.delete('/users/:id', async (req, res) => {
         });
     }
 });
+
+app.post('/payments/checkout-vetify', async (req, res) => {
+    try {
+        const { sessionId, userId } = req.body;
+        if (!sessionId || !userId || !ObjectId.isValid(userId)) {
+            return res.status(400).send({ success: false, message: 'sessionId and a valid userId are required' });
+        }
+
+        const checkout = await stripe.checkout.sessions.retrieve(sessionId);
+        if (
+            checkout.status !== 'complete' ||
+            checkout.payment_status !== 'paid' ||
+            checkout.mode !== 'payment' ||
+            checkout.client_reference_id !== userId ||
+            checkout.metadata?.userId !== userId ||
+            checkout.metadata?.userRole !== 'tutor'
+        ) {
+            return res.status(400).send({ success: false, message: 'Payment verification failed' });
+        }
+
+        const userObjectId = new ObjectId(userId);
+        const user = await users.findOne({ _id: userObjectId, role: 'tutor' });
+        if (!user) return res.status(404).send({ success: false, message: 'Tutor account not found' });
+
+        const paymentIntent = checkout.payment_intent;
+        const transactionId = typeof paymentIntent === 'string'
+            ? paymentIntent
+            : paymentIntent?.id || checkout.id;
+        const paidAt = new Date(checkout.created * 1000);
+
+        await payments.updateOne(
+            { stripeSessionId: checkout.id },
+            { $set: {
+                stripeSessionId: checkout.id,
+                transactionId,
+                amount: (checkout.amount_total || 0) / 100,
+                currency: (checkout.currency || 'usd').toUpperCase(),
+                paymentStatus: 'paid',
+                planName: 'Pro Tutor',
+                userId,
+                userEmail: checkout.customer_details?.email || checkout.customer_email || user.email || '',
+                userName: user.name || 'Tutor',
+                userRole: 'tutor',
+                paidAt,
+                updatedAt: new Date(),
+            } },
+            { upsert: true }
+        );
+
+        await users.updateOne(
+            { _id: userObjectId, role: 'tutor' },
+            { $set: { plan: 'pro', updatedAt: paidAt }, $unset: { premium: '' } }
+        );
+
+        res.send({ success: true, message: 'Payment verified and Pro plan activated' });
+    } catch (error) {
+        res.status(500).send({ success: false, message: 'Could not verify payment', error: error.message });
+    }
+})
 
 
 
@@ -255,8 +317,10 @@ app.get('/tuitions/search', async (req, res) => {
         const page = Math.max(1, parseInt(req.query.page, 10) || 1);
         const pageSize = Math.min(50, Math.max(1, parseInt(req.query.pageSize, 10) || 6));
 
-        if (q) filters.push({ $or: ['title', 'subject', 'classLevel', 'tutorName']
-            .map((field) => ({ [field]: { $regex: escape(q), $options: 'i' } })) });
+        if (q) filters.push({
+            $or: ['title', 'subject', 'classLevel', 'tutorName']
+                .map((field) => ({ [field]: { $regex: escape(q), $options: 'i' } }))
+        });
         if (subjects.length) filters.push({ subject: { $in: subjects } });
         if (modes.length) filters.push({ mode: { $in: modes } });
         if (classes.length) filters.push({ classLevel: { $in: classes } });
@@ -267,10 +331,12 @@ app.get('/tuitions/search', async (req, res) => {
         const [result] = await tuitions.aggregate([
             ...(filters.length ? [{ $match: { $and: filters } }] : []),
             { $addFields: { fee: { $convert: { input: '$monthlyFee', to: 'double', onError: 0, onNull: 0 } } } },
-            { $facet: {
-                data: [{ $sort: sortBy }, { $skip: (page - 1) * pageSize }, { $limit: pageSize }, { $unset: 'fee' }],
-                total: [{ $count: 'count' }],
-            } },
+            {
+                $facet: {
+                    data: [{ $sort: sortBy }, { $skip: (page - 1) * pageSize }, { $limit: pageSize }, { $unset: 'fee' }],
+                    total: [{ $count: 'count' }],
+                }
+            },
         ]).toArray();
         const total = result?.total?.[0]?.count || 0;
         res.send({ success: true, data: result?.data || [], total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
