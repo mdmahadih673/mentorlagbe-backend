@@ -160,6 +160,67 @@ app.post('/payments/checkout-vetify', async (req, res) => {
     }
 })
 
+app.post('/payments/student/checkout-verify', async (req, res) => {
+    try {
+        const { sessionId, userId } = req.body;
+        if (!sessionId || !userId || !ObjectId.isValid(userId)) {
+            return res.status(400).send({ success: false, message: 'sessionId and a valid userId are required' });
+        }
+
+        const checkout = await stripe.checkout.sessions.retrieve(sessionId);
+        if (
+            checkout.status !== 'complete' ||
+            checkout.payment_status !== 'paid' ||
+            checkout.mode !== 'payment' ||
+            checkout.currency !== 'usd' ||
+            checkout.amount_total !== 1000 ||
+            checkout.client_reference_id !== userId ||
+            checkout.metadata?.userId !== userId ||
+            checkout.metadata?.userRole !== 'student'
+        ) {
+            return res.status(400).send({ success: false, message: 'Student payment verification failed' });
+        }
+
+        const userObjectId = new ObjectId(userId);
+        const user = await users.findOne({ _id: userObjectId, role: 'student' });
+        if (!user) return res.status(404).send({ success: false, message: 'Student account not found' });
+
+        const paymentIntent = checkout.payment_intent;
+        const transactionId = typeof paymentIntent === 'string'
+            ? paymentIntent
+            : paymentIntent?.id || checkout.id;
+        const paidAt = new Date(checkout.created * 1000);
+
+        await payments.updateOne(
+            { stripeSessionId: checkout.id },
+            { $set: {
+                stripeSessionId: checkout.id,
+                transactionId,
+                amount: checkout.amount_total / 100,
+                currency: checkout.currency.toUpperCase(),
+                paymentStatus: 'paid',
+                planName: 'Pro Student',
+                userId,
+                userEmail: checkout.customer_details?.email || checkout.customer_email || user.email || '',
+                userName: user.name || 'Student',
+                userRole: 'student',
+                paidAt,
+                updatedAt: new Date(),
+            } },
+            { upsert: true }
+        );
+
+        await users.updateOne(
+            { _id: userObjectId, role: 'student' },
+            { $set: { plan: 'pro', updatedAt: paidAt }, $unset: { premium: '' } }
+        );
+
+        res.send({ success: true, message: 'Student payment verified and Pro plan activated' });
+    } catch (error) {
+        res.status(500).send({ success: false, message: 'Could not verify student payment', error: error.message });
+    }
+});
+
 
 
 app.patch('/users/:id/role', async (req, res) => {
