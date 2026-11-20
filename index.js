@@ -64,7 +64,12 @@ async function getTransactionsByRole(role, res) {
 
         const data = paymentsForRole.map((payment) => ({
             ...payment,
+            userName: payment.userName || 'Unknown user',
             userEmail: payment.userEmail || payment.customer_email || '',
+            userRole: role,
+            planName: payment.planName || `Pro ${role === 'student' ? 'Student' : 'Tutor'}`,
+            amount: Number(payment.amount) || 0,
+            currency: (payment.currency || 'usd').toUpperCase(),
             transactionId: payment.transactionId || payment.payment_intent || '',
             paymentStatus: payment.paymentStatus || payment.payment_status || '',
             paidAt: payment.paidAt || payment.payment_date || null,
@@ -79,6 +84,8 @@ async function getTransactionsByRole(role, res) {
 
 app.get('/admin/transactions/students', (req, res) => getTransactionsByRole('student', res));
 app.get('/admin/transactions/tutors', (req, res) => getTransactionsByRole('tutor', res));
+
+
 
 async function getTutorTuitionUsage(teacherId) {
     if (!ObjectId.isValid(teacherId)) return null;
