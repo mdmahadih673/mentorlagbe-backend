@@ -31,6 +31,22 @@ const tuitions = database.collection("tuitions");
 const applications = database.collection("applications");
 const payments = database.collection("payment");
 
+async function getTutorTuitionUsage(teacherId) {
+    if (!ObjectId.isValid(teacherId)) return null;
+
+    const user = await users.findOne(
+        { _id: new ObjectId(teacherId) },
+        { projection: { role: 1, plan: 1 } }
+    );
+    if (!user || user.role !== 'tutor') return null;
+
+    const count = await tuitions.countDocuments({ teacherId });
+    const plan = user.plan === 'pro' ? 'pro' : 'free';
+    const limit = plan === 'pro' ? null : 2;
+
+    return { count, plan, limit, remaining: limit === null ? null : Math.max(0, limit - count) };
+}
+
 
 app.get('/users', async (req, res) => {
     const cursor = users.find({});
@@ -164,9 +180,36 @@ app.delete('/admin/tuitions/:id', async (req, res) => {
 });
 
 
+app.get('/tutor/tuition-count/:teacherId', async (req, res) => {
+    try {
+        const usage = await getTutorTuitionUsage(req.params.teacherId);
+        if (!usage) {
+            return res.status(404).send({ success: false, message: 'Tutor not found' });
+        }
+
+        res.send({ success: true, ...usage, canPost: usage.limit === null || usage.count < usage.limit });
+    } catch (error) {
+        res.status(500).send({ success: false, message: 'Failed to get tuition count' });
+    }
+});
+
 app.post('/tuition', async (req, res) => {
     try {
         const tutorData = req.body;
+        const teacherId = tutorData.teacherId;
+        const usage = await getTutorTuitionUsage(teacherId);
+
+        if (!usage) {
+            return res.status(404).send({ success: false, message: 'Tutor not found' });
+        }
+        if (usage.limit !== null && usage.count >= usage.limit) {
+            return res.status(403).send({
+                success: false,
+                message: 'Free plan allows up to 2 tuition posts. Upgrade to Pro to post more.',
+                ...usage,
+                canPost: false,
+            });
+        }
 
         const newTutor = {
             ...tutorData,
@@ -180,7 +223,11 @@ app.post('/tuition', async (req, res) => {
         res.send({
             success: true,
             message: 'Tuition posted successfully',
-            result
+            result,
+            count: usage.count + 1,
+            plan: usage.plan,
+            limit: usage.limit,
+            remaining: usage.limit === null ? null : Math.max(0, usage.limit - usage.count - 1),
         });
 
     } catch (error) {
