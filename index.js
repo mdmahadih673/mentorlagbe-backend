@@ -94,6 +94,19 @@ app.get('/admin/applications/count', async (req, res) => {
     }
 });
 
+app.get('/admin/transactions/revenue', async (req, res) => {
+    try {
+        const [result] = await payments.aggregate([
+            { $match: { $or: [{ paymentStatus: 'paid' }, { payment_status: 'paid' }] } },
+            { $group: { _id: null, totalRevenue: { $sum: { $convert: { input: '$amount', to: 'double', onError: 0, onNull: 0 } } } } },
+        ]).toArray();
+
+        res.send({ success: true, totalRevenue: result?.totalRevenue || 0, currency: 'USD' });
+    } catch (error) {
+        res.status(500).send({ success: false, message: 'Failed to get total revenue' });
+    }
+});
+
 
 
 async function getTutorTuitionUsage(teacherId) {
