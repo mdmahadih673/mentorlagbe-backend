@@ -1,265 +1,124 @@
-# 🎓 MentorLagbe — Smart Tuition & Mentorship Platform
+# 🎓 MentorLagbe API — Smart Tuition & Mentorship Platform
 
-MentorLagbe is a modern tuition and mentorship platform that connects students with qualified tutors. Students can discover tuition opportunities, apply for their preferred tuition, and track their applications, while tutors can create tuition listings, manage applicants, and grow their teaching opportunities.
+The backend REST API for **MentorLagbe**, a tuition and mentorship platform that connects students with qualified tutors.
 
-The platform provides role-based dashboards for Students, Tutors, and Admins, along with a secure authentication system and subscription-based premium features.
-
----
-
-## 🌐 Live Website
-
-🔗 **Live Site:** [https://mentorlagbe-frontend.vercel.app](https://mentorlagbe-frontend.vercel.app)
-
-🔗 **Backend API:** [https://mentorlagbe-backend.vercel.app](https://mentorlagbe-backend.vercel.app)
+This service handles tuition listings, student applications, tutor applicant management, Pro plan payment verification, and admin operations. Authentication is provided by **Better Auth** on the frontend, and this API verifies the resulting JWT access tokens.
 
 ---
 
-## 📸 Project Overview
+## 🌐 Live API
 
-MentorLagbe makes the tuition-finding and tutoring process easier, smarter, and more organized.
+🔗 **API Base URL:** [https://mentorlagbe-backend.vercel.app](https://mentorlagbe-backend.vercel.app)
 
-Students can browse tuition listings by subject, class level, teaching mode, location, and budget. Tutors can post tuition opportunities and manage student applications. Admins can monitor users, approve tuition listings, and manage platform transactions.
+🔗 **Health Check:** [https://mentorlagbe-backend.vercel.app/](https://mentorlagbe-backend.vercel.app/)
 
----
-
-## ✨ Key Features
-
-### 👨‍🎓 Student Features
-
-- Register and log in securely with email/password, Google, or GitHub.
-- Browse approved and active tuition listings.
-- Search tuitions by title, subject, or tutor name.
-- Filter tuitions by subject, class level, location, and teaching mode.
-- Sort listings by newest or tuition fee.
-- View detailed tuition information.
-- Apply for tuition opportunities.
-- Prevent duplicate applications.
-- Track application status.
-- Cancel pending applications.
-- Upgrade to a Pro student membership.
-- Update profile information and profile photo.
-
-### 👨‍🏫 Tutor Features
-
-- Register as a Tutor.
-- Create tuition listings.
-- Upload tuition banner images.
-- Manage created tuition posts.
-- Edit and delete tuition listings.
-- Toggle tuition status between Active and Closed.
-- Track admin approval status.
-- Manage student applicants.
-- Accept or reject student applications.
-- Upgrade to a Pro tutor membership.
-- Free tutors can create up to 2 tuition posts.
-- Pro tutors can create unlimited tuition posts.
-
-### 🛡️ Admin Features
-
-- View platform statistics.
-- Manage registered users.
-- Create user accounts and change user roles.
-- View all tuition listings.
-- Approve or reject tuition posts.
-- Manage student and tutor transactions.
-- Monitor total revenue.
-- Access a dedicated admin dashboard.
-
-### 💳 Payment Features
-
-- Free and Pro subscription plans.
-- Stripe Checkout integration.
-- Pro Tutor Plan — **$15 one-time payment**.
-- Pro Student Plan — **$10 one-time payment**.
-- Secure payment processing.
-- Payment success pages.
-- Payment cancellation handling.
-- Transaction history.
-- Automatic subscription plan updates after successful payment.
-
-### 🔐 Authentication & Security
-
-- Better Auth authentication.
-- Email and password authentication.
-- Google and GitHub social login.
-- Role-based authorization.
-- JWT plugin integration.
-- Protected dashboard routes.
-- Server-side role checks.
-- Secure API communication.
-- Environment variable configuration.
+🔗 **Frontend:** [https://mentorlagbe-frontend.vercel.app](https://mentorlagbe-frontend.vercel.app)
 
 ---
 
-## 🧑‍💻 User Roles
+## 📸 Overview
 
-| Role | Description |
-|------|-------------|
-| Student | Browse tuition listings, apply for tuitions, manage applications, and upgrade membership. |
-| Tutor | Create tuition listings, manage applicants, and upgrade membership. |
-| Admin | Manage users, tuition listings, approvals, and transactions. |
+MentorLagbe lets students discover tuition opportunities, apply for tuition, and track their applications. Tutors can post tuition listings, manage applicants, and upgrade to Pro. Admins can manage users, approve or reject tuition posts, and monitor transactions and revenue.
+
+The backend is a single Express application backed by MongoDB. It exposes a role-protected REST API and verifies Better Auth JWTs using the frontend's JWKS endpoint.
+
+---
+
+## ✨ Features
+
+- JWT authentication with remote JWKS verification.
+- Role-based authorization for Students, Tutors, and Admins.
+- Tuition listing creation, editing, deletion, and visibility controls.
+- Admin tuition approval workflow: `pending`, `approved`, `rejected`.
+- Public tuition search with keyword, subject, class, mode, location, sorting, and pagination.
+- Student applications with duplicate prevention and cancellation.
+- Tutor applicant management with accept/reject actions.
+- Free and Pro plan limits enforced on the server.
+- Stripe Checkout verification and automatic Pro plan activation.
+- Payment records and admin transaction/revenue APIs.
+- Admin user management, role changes, and cascade deletes.
+- CORS support for the frontend application.
 
 ---
 
 ## 🛠️ Technology Stack
 
-### Frontend
-
-- Next.js 16 (App Router)
-- React 19
-- TypeScript
-- Tailwind CSS v4
-- shadcn/ui and Base UI
-- Lucide React
-- Recharts
-
-### Authentication
-
-- Better Auth
-- MongoDB adapter
-- JWT
-- Role-based authentication
-
-### Backend
-
-- Node.js
-- Express.js
-- MongoDB
-- [mentorlagbe-backend](https://github.com/mdmahadih673/mentorlagbe-backend)
-
-### Payment
-
-- Stripe Checkout
-- Stripe.js
-
-### Image Upload
-
-- ImgBB API
-
-### Deployment
-
-- Vercel (Frontend)
-- Vercel (Backend)
+- **Node.js** with ES modules
+- **Express.js 5**
+- **MongoDB** via the official `mongodb` driver
+- **jose** for JWT verification against Better Auth JWKS
+- **Stripe** for checkout session verification
+- **dotenv** for environment configuration
+- **cors** for cross-origin requests
+- **Vercel** for deployment
 
 ---
 
-## 📄 Pages & Routes
+## 🔐 Authentication & Authorization
 
-### Public Pages
+Authentication is handled by **Better Auth** in the frontend application. The frontend issues a JWT, and this backend verifies it.
 
-| Route | Description |
-|-------|-------------|
-| `/` | Homepage with hero section, featured tuitions, pricing, and platform information |
-| `/tuitions` | Browse, search, filter, and sort approved tuition listings |
-| `/tuitions/[id]` | Tuition details and application form |
-| `/pricing` | Free and Pro subscription plans |
-| `/how-it-works` | Step-by-step guide for students and tutors |
-| `/about` | Platform information |
-| `/sign-in` | User login |
-| `/sign-up` | User registration as a Student or Tutor |
-| `/unauthorized` | Access denied page |
-| `/success` | Legacy payment success redirect |
+### Request flow
 
-### Dashboard Pages
+```text
+Next.js frontend
+   │
+   ├── Better Auth  ──►  MongoDB (user, session, account)
+   │        │
+   │        └── JWT (audience: mentorlagbe-api)
+   │
+   └── Backend API  ──►  Verifies JWT via JWKS
+            │
+            └── MongoDB (tuitions, applications, payments)
+```
 
-| Route | Description |
-|-------|-------------|
-| `/dashboard` | Role-based dashboard overview |
-| `/dashboard/profile` | Update user profile and photo |
-| `/dashboard/my-applications` | Student: manage tuition applications |
-| `/dashboard/student-payment` | Student: upgrade to Pro |
-| `/dashboard/student-payment/success` | Student: payment confirmation |
-| `/dashboard/post-tuition` | Tutor: create a tuition listing |
-| `/dashboard/my-tuitions` | Tutor: manage created tuition posts |
-| `/dashboard/my-tuitions/[id]/edit` | Tutor: edit a tuition listing |
-| `/dashboard/applicants` | Tutor: manage student applications |
-| `/dashboard/applicants/[id]` | Tutor: review a single applicant |
-| `/dashboard/payment` | Tutor: upgrade to Pro |
-| `/dashboard/payment/success` | Tutor: payment confirmation |
-| `/dashboard/admin/users` | Admin: user management |
-| `/dashboard/tuitions` | Admin: tuition approval management |
-| `/dashboard/transactions` | Admin: payment and transaction management |
+### Protected request header
 
----
+```http
+Authorization: Bearer <jwt-access-token>
+```
 
-## 📊 Dashboard Overview
+### Verification rules
 
-### Student Dashboard
+- The JWT signature is verified with the JWKS from
+  `BETTER_AUTH_URL/api/auth/jwks`, or from `AUTH_JWKS_URL` when provided.
+- The token issuer must match `BETTER_AUTH_URL`.
+- The token audience must be `mentorlagbe-api`.
+- The token subject (`sub`) is used to load the current user from the `user` collection.
+- The user's `role` determines which routes are allowed.
 
-- Total Applications
-- Accepted Applications
-- Pending Applications
-- Available Tuitions
-- My Applications
-- Application Status Tracking
+### Roles
 
-### Tutor Dashboard
+| Role | Access |
+|------|--------|
+| Student | Browse tuitions, apply, cancel pending applications, view own application stats, verify student payment |
+| Tutor | Manage own tuitions, manage own applicants, verify tutor payment |
+| Admin | Manage users, roles, tuitions, approvals, transactions, and revenue |
 
-- Total Tuitions Posted
-- Approved Tuitions
-- Total Applicants
-- Pending Review
-- My Tuitions
-- Applicant Management
-
-### Admin Dashboard
-
-- Total Users
-- Total Tutors
-- Pending Tuitions
-- Approved Tuitions
-- Rejected Tuitions
-- Total Applications
-- Total Revenue
-- User Management
-- Tuition Moderation
-- Transaction Management
-
----
-
-## 🎨 UI & Design
-
-- Modern and clean interface.
-- Responsive design for mobile, tablet, and desktop.
-- Consistent typography and spacing.
-- Reusable shadcn/ui components.
-- Professional color palette.
-- Equal-sized tuition cards.
-- Interactive navigation.
-- Dashboard sidebar.
-- Loading skeletons.
-- Custom error and not-found pages.
-- Toast notifications.
-- Smooth animations and transitions.
+Unauthorized requests return `401`. Authenticated users with the wrong role receive `403`.
 
 ---
 
 ## 🚀 Getting Started
 
-Follow these instructions to run the frontend project locally.
-
 ### Prerequisites
 
-Make sure you have installed:
-
-- Node.js (Latest LTS recommended)
+- Node.js 20 or newer
 - npm
-- Git
-- MongoDB connection string
-- Stripe account
-- ImgBB account
-- Google and GitHub OAuth apps
+- A MongoDB database
+- A Stripe account with the same products used by the frontend
+- The MentorLagbe frontend running (for Better Auth and JWKS)
 
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/mdmahadih673/mentorlagbe-frontend.git
+git clone https://github.com/mdmahadih673/mentorlagbe-backend.git
 ```
 
 ### 2. Navigate to the Project Directory
 
 ```bash
-cd mentorlagbe-frontend
+cd mentorlagbe-backend
 ```
 
 ### 3. Install Dependencies
@@ -270,120 +129,314 @@ npm install
 
 ### 4. Configure Environment Variables
 
-Create a `.env.local` file in the root directory.
+Create a `.env` file in the project root.
 
 ```env
-BETTER_AUTH_SECRET=your_better_auth_secret
-BETTER_AUTH_URL=http://localhost:3000
-NEXT_PUBLIC_BETTER_AUTH_URL=http://localhost:3000
-
-NEXT_PUBLIC_API_BASE_URL=http://localhost:5000
+PORT=5000
 MONGODB_URL=your_mongodb_connection_string
-
-GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret
-GITHUB_CLIENT_ID=your_github_client_id
-GITHUB_CLIENT_SECRET=your_github_client_secret
-
-IMAGEBB_API=your_imgbb_api_key
 STRIPE_SECRET_KEY=your_stripe_secret_key
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=your_stripe_publishable_key
+BETTER_AUTH_URL=http://localhost:3000
 ```
 
-> Never expose secret keys or private credentials in frontend environment variables. Only variables prefixed with `NEXT_PUBLIC_` are sent to the browser.
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `PORT` | No | Server port. Defaults to `5000`. |
+| `MONGODB_URL` | Yes | MongoDB connection string. The app uses the `mentorlagbe` database. |
+| `STRIPE_SECRET_KEY` | Yes | Stripe secret key used to retrieve and verify Checkout Sessions. |
+| `BETTER_AUTH_URL` | Yes | Frontend URL. Used as the JWT issuer and to build the JWKS URL. |
+| `AUTH_JWKS_URL` | No | Overrides the JWKS URL when it is not at `BETTER_AUTH_URL/api/auth/jwks`. |
 
-### 5. Run the Development Server
+> Never commit the `.env` file. It is already excluded by `.gitignore`.
+
+### 5. Run the Server
 
 ```bash
-npm run dev
+node index.js
 ```
 
-Open the application in your browser:
+The API starts on `http://localhost:5000` by default.
+
+Verify it is running:
+
+```bash
+curl http://localhost:5000/
+```
+
+Expected response:
 
 ```text
-http://localhost:3000
+Hello World!
 ```
 
-The backend must be running separately. See the [backend repository](https://github.com/mdmahadih673/mentorlagbe-backend) for its setup instructions.
+### 6. Connect the Frontend
+
+Set the following variable in the frontend `.env.local`:
+
+```env
+NEXT_PUBLIC_API_BASE_URL=http://localhost:5000
+```
+
+The backend and frontend must share the same Better Auth configuration. In particular, `BETTER_AUTH_URL` must point to the frontend origin so JWT issuers and JWKS URLs match.
+
+---
+
+## 📡 API Reference
+
+**Base URL:** `http://localhost:5000` (local) or `https://mentorlagbe-backend.vercel.app` (production)
+
+**Access legend:** Public · Student · Tutor · Admin · Owner (the authenticated user must own the resource)
+
+### Health
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| `GET` | `/` | Public | Health check. Returns `Hello World!`. |
+
+### Tuition Listings
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| `GET` | `/tuitions` | Public | List all approved and active tuitions. |
+| `GET` | `/tuitions/search` | Public | Search, filter, sort, and paginate approved active tuitions. |
+| `GET` | `/tuitions/:id` | Public | Get one approved and active tuition by ID. |
+| `POST` | `/tuition` | Tutor | Create a tuition post. New posts start as `pending`. Free tutors are limited to 2 posts. |
+| `PATCH` | `/tuitions/:id` | Tutor + Owner | Update allowed tuition fields. The post is sent back to `pending` for review. |
+| `PATCH` | `/tuitions/:id/active` | Tutor + Owner | Toggle an approved tuition between active and closed. |
+| `DELETE` | `/tuitions/:id` | Tutor + Owner | Delete a tuition and its related applications. |
+| `GET` | `/my-tuitions/:teacherId` | Tutor + Owner | List all tuitions created by the authenticated tutor. |
+| `GET` | `/tutor/tuition-count/:teacherId` | Tutor + Owner | Get the tutor's post count, plan, limit, and remaining posts. |
+
+#### Search query parameters
+
+| Parameter | Description |
+|-----------|-------------|
+| `q` | Keyword search across title, subject, class level, and tutor name. |
+| `subject` | Filter by subject. Repeatable or comma-separated. |
+| `class` | Filter by class level. Supports `Class 6–8`, `Class 9–10`, `HSC`, and `Admission`. Repeatable or comma-separated. |
+| `mode` | Filter by `Online` or `Offline`. Repeatable or comma-separated. |
+| `location` | Filter by location. `Online` matches online tuitions; other values match offline locations. |
+| `sort` | `newest` (default), `fee-low`, or `fee-high`. |
+| `page` | Page number. Defaults to `1`. |
+| `pageSize` | Results per page. Defaults to `6`, maximum `50`. |
+
+#### Example
+
+```http
+GET /tuitions/search?q=math&class=Class%209%E2%80%9310&mode=Online&sort=fee-low&page=1
+```
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "_id": "67...",
+      "title": "Math for Class 9–10",
+      "subject": "Mathematics",
+      "classLevel": "Class 9",
+      "mode": "Online",
+      "monthlyFee": 3000,
+      "tutorEmail": "tutor@example.com"
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "pageSize": 6,
+  "totalPages": 1
+}
+```
+
+### Student Applications
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| `POST` | `/applications` | Student | Apply for an approved active tuition. |
+| `GET` | `/student/applications/:studentId` | Student + Owner | List the student's applications for tuitions that are still open. |
+| `DELETE` | `/student/applications/:applicationId` | Student + Owner | Cancel a pending application. |
+| `GET` | `/student/application-count/:studentId` | Student + Owner | Get application counts, plan, limit, and whether the student can apply. |
+
+#### Apply request body
+
+```json
+{
+  "tuitionId": "67...",
+  "studentId": "67...",
+  "studentPhone": "+8801XXXXXXXXX",
+  "message": "I am interested in this tuition.",
+  "preferredTime": "Evening after 6 PM"
+}
+```
+
+`studentPhone` and `preferredTime` are required. The API rejects duplicate active applications for the same tuition with `409`.
+
+### Tutor Applicants
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| `GET` | `/tutor/applications/:teacherId` | Tutor + Owner | List applications received for the tutor's tuitions. |
+| `PATCH` | `/tutor/applications/:applicationId/status` | Tutor + Owner | Update an application to `pending`, `accepted`, or `rejected`. |
+| `DELETE` | `/tutor/applications/:applicationId` | Tutor + Owner | Delete an application received by the tutor. |
+
+#### Update status request body
+
+```json
+{
+  "status": "accepted"
+}
+```
+
+### Payments
+
+Checkout Sessions are created by the frontend, then verified here after Stripe redirects the user back.
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| `POST` | `/payments/checkout-vetify` | Tutor + Owner | Verify a tutor Checkout Session, record the payment, and activate the Pro Tutor plan. |
+| `POST` | `/payments/student/checkout-verify` | Student + Owner | Verify a student Checkout Session, record the payment, and activate the Pro Student plan. |
+
+> The tutor route is currently spelled `checkout-vetify` in the API. The frontend calls this exact path.
+
+#### Verify request body
+
+```json
+{
+  "sessionId": "cs_test_...",
+  "userId": "67..."
+}
+```
+
+The API checks that the session is complete, paid, in `payment` mode, and belongs to the authenticated user. The student verification additionally requires a `USD` payment of exactly `$10.00`.
+
+### Admin
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| `GET` | `/users` | Admin | List all users. |
+| `PATCH` | `/users/:id/role` | Admin | Change a user's role to `student`, `tutor`, or `admin`. |
+| `DELETE` | `/users/:id` | Admin | Delete a user and related sessions, accounts, applications, and tuitions. |
+| `GET` | `/admin/tuitions` | Admin | List all tuitions, including pending and rejected posts. |
+| `PATCH` | `/admin/tuitions/:id/status` | Admin | Set approval status to `pending`, `approved`, or `rejected`. |
+| `DELETE` | `/admin/tuitions/:id` | Admin | Delete a tuition and its related applications. |
+| `GET` | `/admin/applications/count` | Admin | Get the total number of applications. |
+| `GET` | `/admin/transactions/students` | Admin | List student transactions. |
+| `GET` | `/admin/transactions/tutors` | Admin | List tutor transactions. |
+| `GET` | `/admin/transactions/revenue` | Admin | Get total revenue from paid transactions. |
+
+#### Role update request body
+
+```json
+{
+  "role": "tutor"
+}
+```
+
+#### Approval status request body
+
+```json
+{
+  "status": "approved"
+}
+```
+
+---
+
+## 🧠 Business Rules
+
+- A new tuition post is created with `approvalStatus: "pending"` and `isActive: true`.
+- Editing a tuition resets its approval status to `pending`.
+- Only approved and active tuitions are publicly visible and searchable.
+- Tutors can toggle `isActive` only on approved tuitions they own.
+- Free tutors can create up to **2** tuition posts.
+- Pro tutors have **unlimited** tuition posts.
+- Free students can have up to **2** active applications (`pending` or `accepted`) on open tuitions.
+- Pro students have **unlimited** active applications.
+- Students cannot submit a second active application for the same tuition.
+- Only `pending` applications can be cancelled by a student.
+- A successful Stripe verification records a payment and sets the user's `plan` to `pro`.
+- Deleting a user cascades to their sessions, accounts, applications, and owned tuitions.
+- Deleting a tuition cascades to its applications.
+
+---
+
+## 🗂️ Data Model
+
+The API uses the `mentorlagbe` MongoDB database.
+
+| Collection | Purpose | Key fields |
+|------------|---------|------------|
+| `user` | Better Auth users | `name`, `email`, `role`, `plan`, `image` |
+| `tuitions` | Tuition listings | `teacherId`, `title`, `subject`, `classLevel`, `mode`, `location`, `daysPerWeek`, `preferredTime`, `monthlyFee`, `description`, `bannerUrl`, `approvalStatus`, `isActive`, `createdAt`, `updatedAt` |
+| `applications` | Student applications | `tuitionId`, `teacherId`, `studentId`, `studentName`, `studentEmail`, `studentPhone`, `message`, `preferredTime`, `status`, `createdAt`, `updatedAt` |
+| `payments` | Stripe payments | `userId`, `userEmail`, `userName`, `userRole`, `planName`, `amount`, `currency`, `transactionId`, `stripeSessionId`, `paymentStatus`, `paidAt`, `updatedAt` |
+
+> The `user`, `session`, and `account` collections are primarily managed by Better Auth. This API reads the user record for authorization and updates `role` and `plan` where needed.
+
+---
+
+## 🧾 Error Responses
+
+Errors use a consistent JSON shape:
+
+```json
+{
+  "success": false,
+  "message": "A human-readable explanation"
+}
+```
+
+| Status | Meaning |
+|--------|---------|
+| `400` | Invalid ID, missing fields, or invalid status/role |
+| `401` | Missing, invalid, or expired token |
+| `403` | Wrong role, plan limit reached, or resource not owned by the user |
+| `404` | User, tuition, or application not found |
+| `409` | Duplicate application or an application that can no longer be cancelled |
+| `500` | Unexpected server error |
 
 ---
 
 ## 📁 Project Structure
 
 ```text
-mentorlagbe-frontend/
+mentorlagbe-backend/
 │
-├── public/
-│
-├── src/
-│   ├── app/
-│   │   ├── (auth)/
-│   │   │   ├── sign-in/
-│   │   │   └── sign-up/
-│   │   ├── api/
-│   │   │   ├── admin/
-│   │   │   ├── auth/
-│   │   │   ├── checkout_sessions/
-│   │   │   ├── student/
-│   │   │   └── upload/
-│   │   ├── dashboard/
-│   │   │   ├── (admin)/
-│   │   │   │   ├── admin/
-│   │   │   │   ├── transactions/
-│   │   │   │   └── tuitions/
-│   │   │   ├── (student)/
-│   │   │   │   ├── my-applications/
-│   │   │   │   └── student-payment/
-│   │   │   ├── (tutor)/
-│   │   │   │   ├── applicants/
-│   │   │   │   ├── my-tuitions/
-│   │   │   │   ├── payment/
-│   │   │   │   └── post-tuition/
-│   │   │   ├── profile/
-│   │   │   └── page.tsx
-│   │   ├── tuitions/
-│   │   │   ├── [id]/
-│   │   │   └── page.tsx
-│   │   ├── pricing/
-│   │   ├── how-it-works/
-│   │   ├── about/
-│   │   ├── unauthorized/
-│   │   ├── page.tsx
-│   │   ├── error.tsx
-│   │   └── not-found.tsx
-│   │
-│   ├── components/
-│   │   ├── auth/
-│   │   ├── dashboard/
-│   │   ├── layout/
-│   │   ├── sections/
-│   │   ├── tuition/
-│   │   └── ui/
-│   │
-│   ├── hooks/
-│   ├── lib/
-│   │   ├── api/
-│   │   ├── types/
-│   │   ├── auth.ts
-│   │   ├── auth-client.ts
-│   │   └── stripe.ts
-│   └── ...
-│
-├── components.json
-├── next.config.ts
+├── index.js          # Express app, auth middleware, and all API routes
 ├── package.json
-├── tsconfig.json
+├── .env              # Local environment variables (not committed)
+├── .gitignore
 └── README.md
 ```
+
+The API currently lives in a single `index.js` file. Route modules and controllers are a planned refactor.
+
+---
+
+## 🚢 Deployment
+
+This API is deployed on **Vercel**.
+
+1. Import the repository into Vercel.
+2. Add the environment variables:
+   - `MONGODB_URL`
+   - `STRIPE_SECRET_KEY`
+   - `BETTER_AUTH_URL` — set to the deployed frontend URL, e.g. `https://mentorlagbe-frontend.vercel.app`
+   - `AUTH_JWKS_URL` — optional, only if JWKS is served from a custom URL
+3. Deploy.
+4. Verify `GET /` returns `Hello World!`.
+5. Set the frontend's `NEXT_PUBLIC_API_BASE_URL` to the deployed backend URL.
+
+> `BETTER_AUTH_URL` must match the frontend origin exactly so JWT issuer validation and JWKS discovery succeed.
 
 ---
 
 ## 🔑 Demo Accounts
 
-- **Student / Tutor:** create an account from `/sign-up` and choose the desired role.
-- **Admin:** admin access is granted by setting the user's role to `admin` in the database. Admin passwords are never committed to this repository.
+Accounts are created through the frontend at `/sign-up` as a Student or Tutor.
 
-> If you are reviewing this project, sign up as a Student or Tutor to explore the dashboard. Admin credentials can be shared privately by the developer.
+- **Admin access:** set a user's `role` to `admin` in the `user` collection, or use the admin user management UI.
+- **Pro access:** complete the Stripe Checkout flow, or set `plan` to `pro` in the database for local testing.
+
+Passwords and production secrets are never committed to this repository.
 
 ---
 
@@ -398,35 +451,18 @@ mentorlagbe-frontend/
 
 ---
 
-## 📦 Important Packages
-
-Some of the major packages used in this project:
-
-- `next`
-- `react`
-- `react-dom`
-- `better-auth`
-- `stripe`
-- `@stripe/stripe-js`
-- `mongodb`
-- `@better-auth/mongo-adapter`
-- `lucide-react`
-- `tailwindcss`
-- `shadcn`
-- `recharts`
-
----
-
 ## 🎯 Future Improvements
 
-- Advanced tuition recommendation system.
-- Real-time notifications.
-- Student review and rating system.
-- Saved tuition listings.
-- Dark and light theme.
-- Server-side pagination.
-- Improved search experience.
-- AI-powered tutor recommendations.
+- Split `index.js` into routes, controllers, and services.
+- Add request validation with Zod or Express Validator.
+- Add rate limiting and request logging.
+- Replace redirect-based payment verification with Stripe webhooks.
+- Restrict CORS to the deployed frontend origin.
+- Add automated tests for authorization and business rules.
+- Add OpenAPI/Swagger documentation.
+- Add server-side pagination and filtering for admin lists.
+- Add monitoring and error tracking.
+- Add token refresh and session revocation handling.
 
 ---
 
