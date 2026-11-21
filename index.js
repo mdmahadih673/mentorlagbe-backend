@@ -3,6 +3,7 @@ import cors from 'cors';
 import 'dotenv/config'
 import { MongoClient, ObjectId } from 'mongodb';
 import Stripe from 'stripe'
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
@@ -37,38 +38,37 @@ export async function connectToMongoDB() {
 const connectedClient = await connectToMongoDB();
 const database = connectedClient.db("mentorlagbe");
 const users = database.collection("user");
-const sessions = database.collection("session");
 const tuitions = database.collection("tuitions");
 const applications = database.collection("applications");
 const payments = database.collection("payments");
+const authIssuer = process.env.BETTER_AUTH_URL?.split('#')[0].trim().replace(/\/$/, '');
+const jwksUrl = process.env.AUTH_JWKS_URL || (authIssuer ? `${authIssuer}/api/auth/jwks` : null);
+const jwks = jwksUrl ? createRemoteJWKSet(new URL(jwksUrl)) : null;
 
 
 const verifyToken = async (req, res, next) => {
-    const authHeaders = req.headers.authorization
-    if (!authHeaders) {
-        res.status(401).send({ message: 'unauthorized' })
-        return
-    }
-    const token = authHeaders.split(' ')[1]
-    if (!token) {
-        res.status(401).send({ message: 'unauthorized' })
-        return
-    }
-    const query = { token }
-    const session = await sessions.findOne(query)
-    if (!session) {
-        res.status(401).send({ message: 'unauthorized' })
-        return
+    const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+    if (!token || !jwks || !authIssuer) {
+        return res.status(401).send({ message: 'unauthorized' });
     }
 
-    const userQuery = { _id: new ObjectId(session.userId) }
-    const user = await users.findOne(userQuery)
-    if (!user) {
-        res.status(401).send({ message: 'unauthorized' })
-        return
+    try {
+        const { payload } = await jwtVerify(token, jwks, {
+            issuer: authIssuer,
+            audience: 'mentorlagbe-api',
+        });
+        if (!payload.sub || !ObjectId.isValid(payload.sub)) {
+            return res.status(401).send({ message: 'unauthorized' });
+        }
+
+        const user = await users.findOne({ _id: new ObjectId(payload.sub) });
+        if (!user) return res.status(401).send({ message: 'unauthorized' });
+
+        req.user = user;
+        next();
+    } catch {
+        res.status(401).send({ message: 'unauthorized' });
     }
-    req.user = user;
-    next()
 }
 
 const verifyStudent = (req, res, next) => {
@@ -428,6 +428,15 @@ app.patch('/users/:id/role', verifyToken, verifyAdmin, async (req, res) => {
     }
 })
 
+app.get('/admin/tuitions', verifyToken, verifyAdmin, async (req, res) => {
+    try {
+        const result = await tuitions.find({}).toArray();
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ success: false, message: 'Failed to get tuition listings' });
+    }
+});
+
 app.patch('/admin/tuitions/:id/status', verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { id } = req.params;
@@ -545,7 +554,10 @@ app.get('/tuitions/search', async (req, res) => {
         const values = (key) => [].concat(req.query[key] || [])
             .flatMap((value) => String(value).split(',')).map((value) => value.trim()).filter(Boolean);
         const escape = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const filters = [];
+        const filters = [
+            { approvalStatus: 'approved' },
+            { isActive: { $ne: false } },
+        ];
         const subjects = values('subject');
         const modes = values('mode');
         const classes = values('class').flatMap((value) => ({
@@ -567,7 +579,7 @@ app.get('/tuitions/search', async (req, res) => {
             : { mode: 'Offline', location: { $regex: escape(location), $options: 'i' } });
         const sortBy = { newest: { createdAt: -1 }, 'fee-low': { fee: 1 }, 'fee-high': { fee: -1 } }[sort] || { createdAt: -1 };
         const [result] = await tuitions.aggregate([
-            ...(filters.length ? [{ $match: { $and: filters } }] : []),
+            { $match: { $and: filters } },
             { $addFields: { fee: { $convert: { input: '$monthlyFee', to: 'double', onError: 0, onNull: 0 } } } },
             {
                 $facet: {
@@ -594,7 +606,11 @@ app.get('/tuitions/:id', async (req, res) => {
             });
         }
 
-        const query = { _id: new ObjectId(id) };
+        const query = {
+            _id: new ObjectId(id),
+            approvalStatus: 'approved',
+            isActive: { $ne: false },
+        };
         const result = await tuitions.findOne(query);
 
         if (!result) {
@@ -616,7 +632,10 @@ app.get('/tuitions/:id', async (req, res) => {
 
 app.get('/tuitions', async (req, res) => {
     try {
-        const result = await tuitions.find({}).toArray()
+        const result = await tuitions.find({
+            approvalStatus: 'approved',
+            isActive: { $ne: false },
+        }).toArray()
         res.send(result)
     } catch (error) {
         res.status(500).send({
@@ -652,6 +671,30 @@ app.patch('/tuitions/:id', verifyToken, verifyTutor, async (req, res) => {
         res.send({ success: true, message: 'Tuition updated and sent for review' });
     } catch (error) {
         res.status(500).send({ success: false, message: 'Failed to update tuition' });
+    }
+});
+
+app.patch('/tuitions/:id/active', verifyToken, verifyTutor, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const teacherId = req.user._id.toString();
+        const { isActive } = req.body;
+
+        if (!ObjectId.isValid(id) || typeof isActive !== 'boolean') {
+            return res.status(400).send({ success: false, message: 'A valid tuition ID and active status are required' });
+        }
+
+        const result = await tuitions.updateOne(
+            { _id: new ObjectId(id), teacherId, approvalStatus: 'approved' },
+            { $set: { isActive, updatedAt: new Date() } }
+        );
+        if (!result.matchedCount) {
+            return res.status(404).send({ success: false, message: 'Approved tuition not found or you do not own this post' });
+        }
+
+        res.send({ success: true, message: 'Tuition visibility updated', isActive });
+    } catch (error) {
+        res.status(500).send({ success: false, message: 'Failed to update tuition visibility' });
     }
 });
 
@@ -801,7 +844,7 @@ app.get('/student/application-count/:studentId', verifyToken, verifyStudent, asy
 
 app.post('/applications', verifyToken, verifyStudent, async (req, res) => {
     try {
-        const { tuitionId, studentId, message, preferredTime } = req.body;
+        const { tuitionId, studentId, studentPhone, message, preferredTime } = req.body;
 
         if (!ObjectId.isValid(tuitionId) || !studentId) {
             return res.status(400).send({
@@ -816,6 +859,9 @@ app.post('/applications', verifyToken, verifyStudent, async (req, res) => {
         if (studentId !== req.user._id.toString()) {
             return res.status(403).send({ success: false, message: 'Forbidden' });
         }
+        if (typeof studentPhone !== 'string' || !studentPhone.trim() || typeof preferredTime !== 'string' || !preferredTime.trim()) {
+            return res.status(400).send({ success: false, message: 'Phone number and preferred schedule are required' });
+        }
 
         const student = await users.findOne(
             { _id: new ObjectId(studentId), role: 'student' },
@@ -823,10 +869,17 @@ app.post('/applications', verifyToken, verifyStudent, async (req, res) => {
         );
         if (!student) return res.status(404).send({ success: false, message: 'Student not found' });
 
-        const tuition = await tuitions.findOne({ _id: new ObjectId(tuitionId) });
+        const tuition = await tuitions.findOne({
+            _id: new ObjectId(tuitionId),
+            approvalStatus: 'approved',
+            isActive: { $ne: false },
+        });
         if (!tuition) {
-            return res.status(404).send({ success: false, message: 'Tuition not found' });
+            return res.status(404).send({ success: false, message: 'Approved active tuition not found' });
         }
+        const tutor = ObjectId.isValid(tuition.teacherId)
+            ? await users.findOne({ _id: new ObjectId(tuition.teacherId) }, { projection: { name: 1, email: 1 } })
+            : null;
 
         const existingRequest = await applications.findOne({
             tuitionId,
@@ -860,11 +913,15 @@ app.post('/applications', verifyToken, verifyStudent, async (req, res) => {
         const application = {
             tuitionId,
             teacherId: tuition.teacherId,
+            tutorName: tuition.tutorName || tutor?.name || '',
+            tutorEmail: tutor?.email || '',
             tuitionTitle: tuition.title,
             subject: tuition.subject,
+            monthlyFee: tuition.monthlyFee ?? null,
             studentId,
             studentName: req.user.name,
             studentEmail: req.user.email || '',
+            studentPhone: studentPhone.trim().slice(0, 40),
             message: typeof message === 'string' ? message.trim().slice(0, 1000) : '',
             preferredTime: typeof preferredTime === 'string' ? preferredTime.trim().slice(0, 120) : '',
             status: 'pending',
