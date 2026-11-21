@@ -59,6 +59,23 @@ async function getOpenTuitionIds(tuitionIds) {
     return new Set(openTuitions.map((tuition) => String(tuition._id)));
 }
 
+async function addTutorEmails(listings) {
+    const tutorIds = [...new Set(listings.map((tuition) => tuition.teacherId).filter(ObjectId.isValid))]
+        .map((id) => new ObjectId(String(id)));
+    if (!tutorIds.length) return listings;
+
+    const tutors = await users.find(
+        { _id: { $in: tutorIds } },
+        { projection: { email: 1 } },
+    ).toArray();
+    const emails = new Map(tutors.map((tutor) => [String(tutor._id), tutor.email]));
+
+    return listings.map((tuition) => ({
+        ...tuition,
+        tutorEmail: emails.get(String(tuition.teacherId)) || tuition.tutorEmail || '',
+    }));
+}
+
 
 const verifyToken = async (req, res, next) => {
     const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
@@ -603,7 +620,7 @@ app.get('/tuitions/search', async (req, res) => {
             },
         ]).toArray();
         const total = result?.total?.[0]?.count || 0;
-        res.send({ success: true, data: result?.data || [], total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
+        res.send({ success: true, data: await addTutorEmails(result?.data || []), total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
     } catch (error) {
         res.status(500).send({ success: false, message: 'Failed to search tuition listings' });
     }
@@ -634,7 +651,8 @@ app.get('/tuitions/:id', async (req, res) => {
             });
         }
 
-        res.send(result);
+        const [tuition] = await addTutorEmails([result]);
+        res.send(tuition);
 
     } catch (error) {
         res.status(500).send({
@@ -650,7 +668,7 @@ app.get('/tuitions', async (req, res) => {
             approvalStatus: 'approved',
             isActive: { $ne: false },
         }).toArray()
-        res.send(result)
+        res.send(await addTutorEmails(result))
     } catch (error) {
         res.status(500).send({
             success: false,
