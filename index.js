@@ -17,6 +17,11 @@ app.use(cors());
 app.use(express.json());
 
 
+const myLogger = (req, res, next) => {
+    console.log('api hitting', req.url, req.query);
+    next()
+}
+
 const client = new MongoClient(process.env.MONGODB_URL);
 
 export async function connectToMongoDB() {
@@ -32,9 +37,90 @@ export async function connectToMongoDB() {
 const connectedClient = await connectToMongoDB();
 const database = connectedClient.db("mentorlagbe");
 const users = database.collection("user");
+const sessions = database.collection("session");
 const tuitions = database.collection("tuitions");
 const applications = database.collection("applications");
 const payments = database.collection("payments");
+
+
+const verifyToken = async (req, res, next) => {
+    const authHeaders = req.headers.authorization
+    if (!authHeaders) {
+        res.status(401).send({ message: 'unauthorized' })
+        return
+    }
+    const token = authHeaders.split(' ')[1]
+    if (!token) {
+        res.status(401).send({ message: 'unauthorized' })
+        return
+    }
+    const query = { token }
+    const session = await sessions.findOne(query)
+    if (!session) {
+        res.status(401).send({ message: 'unauthorized' })
+        return
+    }
+
+    const userQuery = { _id: new ObjectId(session.userId) }
+    const user = await users.findOne(userQuery)
+    if (!user) {
+        res.status(401).send({ message: 'unauthorized' })
+        return
+    }
+    req.user = user;
+    next()
+}
+
+const verifyStudent = (req, res, next) => {
+    if (req.user.role !== 'student') {
+        res.status(403).send({ message: 'Forbidden' })
+        return
+    }
+    next()
+}
+
+const verifyTutor = (req, res, next) => {
+    if (req.user.role !== 'tutor') {
+        res.status(403).send({ message: 'Forbidden' })
+        return
+    }
+    next()
+}
+
+const verifyAdmin = (req, res, next) => {
+    if (req.user.role !== 'admin') {
+        res.status(403).send({ message: 'Forbidden' })
+        return
+    }
+    next()
+}
+
+app.get('/my-tuitions/:teacherId', verifyToken, verifyTutor, async (req, res) => {
+
+    try {
+        console.log('My tuitions request headers:', req.headers);
+        const teacherId = req.params.teacherId;
+
+        if (teacherId !== req.user._id.toString()) {
+            res.status(403).send({ message: "Forbidden" })
+            return
+        }
+
+        const result = await tuitions.find({ teacherId }).toArray();
+
+        console.log('My tuitions for tutor:', teacherId, result);
+
+        res.send(result);
+
+    } catch (error) {
+        res.status(500).send({
+            success: false,
+            message: "Failed to get your tuitions",
+            error: error.message
+        });
+    }
+});
+
 
 async function getTransactionsByRole(role, res) {
     try {
@@ -82,10 +168,12 @@ async function getTransactionsByRole(role, res) {
     }
 }
 
-app.get('/admin/transactions/students', (req, res) => getTransactionsByRole('student', res));
-app.get('/admin/transactions/tutors', (req, res) => getTransactionsByRole('tutor', res));
+app.get('/admin/transactions/students', verifyToken, verifyAdmin, (req, res) => getTransactionsByRole('student', res));
+app.get('/admin/transactions/tutors', verifyToken, verifyAdmin, (req, res) => getTransactionsByRole('tutor', res));
 
-app.get('/admin/applications/count', async (req, res) => {
+app.get('/admin/applications/count', verifyToken, verifyAdmin, async (req, res) => {
+
+
     try {
         const total = await applications.countDocuments();
         res.send({ success: true, total });
@@ -94,7 +182,7 @@ app.get('/admin/applications/count', async (req, res) => {
     }
 });
 
-app.get('/admin/transactions/revenue', async (req, res) => {
+app.get('/admin/transactions/revenue', verifyToken, verifyAdmin, async (req, res) => {
     try {
         const [result] = await payments.aggregate([
             { $match: { $or: [{ paymentStatus: 'paid' }, { payment_status: 'paid' }] } },
@@ -126,7 +214,7 @@ async function getTutorTuitionUsage(teacherId) {
 }
 
 
-app.get('/users', async (req, res) => {
+app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
     const cursor = users.find({});
     const results = await cursor.toArray();
     res.send(results);
@@ -134,7 +222,7 @@ app.get('/users', async (req, res) => {
 
 
 
-app.delete('/users/:id', async (req, res) => {
+app.delete('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         if (!ObjectId.isValid(id)) {
@@ -176,11 +264,14 @@ app.delete('/users/:id', async (req, res) => {
     }
 });
 
-app.post('/payments/checkout-vetify', async (req, res) => {
+app.post('/payments/checkout-vetify', verifyToken, verifyTutor, async (req, res) => {
     try {
         const { sessionId, userId } = req.body;
         if (!sessionId || !userId || !ObjectId.isValid(userId)) {
             return res.status(400).send({ success: false, message: 'sessionId and a valid userId are required' });
+        }
+        if (userId !== req.user._id.toString()) {
+            return res.status(403).send({ success: false, message: 'Forbidden' });
         }
 
         const checkout = await stripe.checkout.sessions.retrieve(sessionId);
@@ -207,20 +298,22 @@ app.post('/payments/checkout-vetify', async (req, res) => {
 
         await payments.updateOne(
             { stripeSessionId: checkout.id },
-            { $set: {
-                stripeSessionId: checkout.id,
-                transactionId,
-                amount: (checkout.amount_total || 0) / 100,
-                currency: (checkout.currency || 'usd').toUpperCase(),
-                paymentStatus: 'paid',
-                planName: 'Pro Tutor',
-                userId,
-                userEmail: checkout.customer_details?.email || checkout.customer_email || user.email || '',
-                userName: user.name || 'Tutor',
-                userRole: 'tutor',
-                paidAt,
-                updatedAt: new Date(),
-            } },
+            {
+                $set: {
+                    stripeSessionId: checkout.id,
+                    transactionId,
+                    amount: (checkout.amount_total || 0) / 100,
+                    currency: (checkout.currency || 'usd').toUpperCase(),
+                    paymentStatus: 'paid',
+                    planName: 'Pro Tutor',
+                    userId,
+                    userEmail: checkout.customer_details?.email || checkout.customer_email || user.email || '',
+                    userName: user.name || 'Tutor',
+                    userRole: 'tutor',
+                    paidAt,
+                    updatedAt: new Date(),
+                }
+            },
             { upsert: true }
         );
 
@@ -235,11 +328,14 @@ app.post('/payments/checkout-vetify', async (req, res) => {
     }
 })
 
-app.post('/payments/student/checkout-verify', async (req, res) => {
+app.post('/payments/student/checkout-verify', verifyToken, verifyStudent, async (req, res) => {
     try {
         const { sessionId, userId } = req.body;
         if (!sessionId || !userId || !ObjectId.isValid(userId)) {
             return res.status(400).send({ success: false, message: 'sessionId and a valid userId are required' });
+        }
+        if (userId !== req.user._id.toString()) {
+            return res.status(403).send({ success: false, message: 'Forbidden' });
         }
 
         const checkout = await stripe.checkout.sessions.retrieve(sessionId);
@@ -268,20 +364,22 @@ app.post('/payments/student/checkout-verify', async (req, res) => {
 
         await payments.updateOne(
             { stripeSessionId: checkout.id },
-            { $set: {
-                stripeSessionId: checkout.id,
-                transactionId,
-                amount: checkout.amount_total / 100,
-                currency: checkout.currency.toUpperCase(),
-                paymentStatus: 'paid',
-                planName: 'Pro Student',
-                userId,
-                userEmail: checkout.customer_details?.email || checkout.customer_email || user.email || '',
-                userName: user.name || 'Student',
-                userRole: 'student',
-                paidAt,
-                updatedAt: new Date(),
-            } },
+            {
+                $set: {
+                    stripeSessionId: checkout.id,
+                    transactionId,
+                    amount: checkout.amount_total / 100,
+                    currency: checkout.currency.toUpperCase(),
+                    paymentStatus: 'paid',
+                    planName: 'Pro Student',
+                    userId,
+                    userEmail: checkout.customer_details?.email || checkout.customer_email || user.email || '',
+                    userName: user.name || 'Student',
+                    userRole: 'student',
+                    paidAt,
+                    updatedAt: new Date(),
+                }
+            },
             { upsert: true }
         );
 
@@ -298,7 +396,7 @@ app.post('/payments/student/checkout-verify', async (req, res) => {
 
 
 
-app.patch('/users/:id/role', async (req, res) => {
+app.patch('/users/:id/role', verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { role } = req.body;
@@ -330,7 +428,7 @@ app.patch('/users/:id/role', async (req, res) => {
     }
 })
 
-app.patch('/admin/tuitions/:id/status', async (req, res) => {
+app.patch('/admin/tuitions/:id/status', verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         const { status } = req.body;
@@ -358,7 +456,7 @@ app.patch('/admin/tuitions/:id/status', async (req, res) => {
 });
 
 
-app.delete('/admin/tuitions/:id', async (req, res) => {
+app.delete('/admin/tuitions/:id', verifyToken, verifyAdmin, async (req, res) => {
     try {
         const { id } = req.params;
         if (!ObjectId.isValid(id)) {
@@ -378,9 +476,13 @@ app.delete('/admin/tuitions/:id', async (req, res) => {
 });
 
 
-app.get('/tutor/tuition-count/:teacherId', async (req, res) => {
+app.get('/tutor/tuition-count/:teacherId', verifyToken, verifyTutor, async (req, res) => {
     try {
-        const usage = await getTutorTuitionUsage(req.params.teacherId);
+        const teacherId = req.params.teacherId;
+        if (teacherId !== req.user._id.toString()) {
+            return res.status(403).send({ success: false, message: 'Forbidden' });
+        }
+        const usage = await getTutorTuitionUsage(teacherId);
         if (!usage) {
             return res.status(404).send({ success: false, message: 'Tutor not found' });
         }
@@ -391,10 +493,10 @@ app.get('/tutor/tuition-count/:teacherId', async (req, res) => {
     }
 });
 
-app.post('/tuition', async (req, res) => {
+app.post('/tuition', verifyToken, verifyTutor, async (req, res) => {
     try {
         const tutorData = req.body;
-        const teacherId = tutorData.teacherId;
+        const teacherId = req.user._id.toString();
         const usage = await getTutorTuitionUsage(teacherId);
 
         if (!usage) {
@@ -524,30 +626,13 @@ app.get('/tuitions', async (req, res) => {
     }
 });
 
-app.get('/my-tuitions/:teacherId', async (req, res) => {
-    try {
-        const teacherId = req.params.teacherId;
 
-        const query = { teacherId: teacherId };
-
-        const result = await tuitions.find(query).toArray();
-
-        res.send(result);
-
-    } catch (error) {
-        res.status(500).send({
-            success: false,
-            message: "Failed to get your tuitions",
-            error: error.message
-        });
-    }
-});
-
-app.patch('/tuitions/:id', async (req, res) => {
+app.patch('/tuitions/:id', verifyToken, verifyTutor, async (req, res) => {
     try {
         const { id } = req.params;
-        const { teacherId, ...submittedFields } = req.body;
-        if (!ObjectId.isValid(id) || !teacherId) {
+        const { ...submittedFields } = req.body;
+        const teacherId = req.user._id.toString();
+        if (!ObjectId.isValid(id)) {
             return res.status(400).send({ success: false, message: 'A valid tuition ID and tutor ID are required' });
         }
 
@@ -570,11 +655,11 @@ app.patch('/tuitions/:id', async (req, res) => {
     }
 });
 
-app.delete('/tuitions/:id', async (req, res) => {
+app.delete('/tuitions/:id', verifyToken, verifyTutor, async (req, res) => {
     try {
         const { id } = req.params;
-        const { teacherId } = req.body;
-        if (!ObjectId.isValid(id) || !teacherId) {
+        const teacherId = req.user._id.toString();
+        if (!ObjectId.isValid(id)) {
             return res.status(400).send({ success: false, message: 'A valid tuition ID and tutor ID are required' });
         }
 
@@ -589,10 +674,14 @@ app.delete('/tuitions/:id', async (req, res) => {
     }
 });
 
-app.get('/tutor/applications/:teacherId', async (req, res) => {
+app.get('/tutor/applications/:teacherId', verifyToken, verifyTutor, async (req, res) => {
     try {
+        const teacherId = req.params.teacherId;
+        if (teacherId !== req.user._id.toString()) {
+            return res.status(403).send({ success: false, message: 'Forbidden' });
+        }
         const result = await applications
-            .find({ teacherId: req.params.teacherId })
+            .find({ teacherId })
             .sort({ createdAt: -1 })
             .toArray();
         res.send(result);
@@ -604,10 +693,14 @@ app.get('/tutor/applications/:teacherId', async (req, res) => {
     }
 });
 
-app.get('/student/applications/:studentId', async (req, res) => {
+app.get('/student/applications/:studentId', verifyToken, verifyStudent, async (req, res) => {
     try {
+        const studentId = req.params.studentId;
+        if (studentId !== req.user._id.toString()) {
+            return res.status(403).send({ success: false, message: 'Forbidden' });
+        }
         const result = await applications
-            .find({ studentId: req.params.studentId })
+            .find({ studentId })
             .sort({ createdAt: -1 })
             .toArray();
         const tutorIds = [...new Set(result.map((application) => application.teacherId).filter(Boolean))];
@@ -622,9 +715,45 @@ app.get('/student/applications/:studentId', async (req, res) => {
     }
 });
 
-app.get('/student/application-count/:studentId', async (req, res) => {
+app.delete('/student/applications/:applicationId', verifyToken, verifyStudent, async (req, res) => {
+    try {
+        const { applicationId } = req.params;
+        if (!ObjectId.isValid(applicationId)) {
+            return res.status(400).send({ success: false, message: 'Invalid application ID' });
+        }
+
+        const applicationQuery = { _id: new ObjectId(applicationId) };
+        const application = await applications.findOne(applicationQuery);
+        if (!application) {
+            return res.status(404).send({ success: false, message: 'Application not found' });
+        }
+        if (application.studentId !== req.user._id.toString()) {
+            return res.status(403).send({ success: false, message: 'Forbidden' });
+        }
+        if (application.status !== 'pending') {
+            return res.status(409).send({ success: false, message: 'Only pending requests can be cancelled' });
+        }
+
+        const result = await applications.deleteOne({
+            ...applicationQuery,
+            studentId: req.user._id.toString(),
+            status: 'pending',
+        });
+        if (!result.deletedCount) {
+            return res.status(409).send({ success: false, message: 'This request can no longer be cancelled' });
+        }
+        res.send({ success: true, message: 'Tuition request cancelled' });
+    } catch (error) {
+        res.status(500).send({ success: false, message: 'Failed to cancel tuition request' });
+    }
+});
+
+app.get('/student/application-count/:studentId', verifyToken, verifyStudent, async (req, res) => {
     try {
         const { studentId } = req.params;
+        if (studentId !== req.user._id.toString()) {
+            return res.status(403).send({ success: false, message: 'Forbidden' });
+        }
         if (!ObjectId.isValid(studentId)) {
             return res.status(400).send({ success: false, message: 'Invalid student ID' });
         }
@@ -670,19 +799,22 @@ app.get('/student/application-count/:studentId', async (req, res) => {
     }
 });
 
-app.post('/applications', async (req, res) => {
+app.post('/applications', verifyToken, verifyStudent, async (req, res) => {
     try {
-        const { tuitionId, studentId, studentName, studentEmail, message, preferredTime } = req.body;
+        const { tuitionId, studentId, message, preferredTime } = req.body;
 
-        if (!ObjectId.isValid(tuitionId) || !studentId || !studentName) {
+        if (!ObjectId.isValid(tuitionId) || !studentId) {
             return res.status(400).send({
                 success: false,
-                message: 'Tuition ID, student ID, and student name are required'
+                message: 'Tuition ID and student ID are required'
             });
         }
 
         if (!ObjectId.isValid(studentId)) {
             return res.status(400).send({ success: false, message: 'Invalid student ID' });
+        }
+        if (studentId !== req.user._id.toString()) {
+            return res.status(403).send({ success: false, message: 'Forbidden' });
         }
 
         const student = await users.findOne(
@@ -731,8 +863,8 @@ app.post('/applications', async (req, res) => {
             tuitionTitle: tuition.title,
             subject: tuition.subject,
             studentId,
-            studentName,
-            studentEmail: studentEmail || '',
+            studentName: req.user.name,
+            studentEmail: req.user.email || '',
             message: typeof message === 'string' ? message.trim().slice(0, 1000) : '',
             preferredTime: typeof preferredTime === 'string' ? preferredTime.trim().slice(0, 120) : '',
             status: 'pending',
@@ -751,17 +883,18 @@ app.post('/applications', async (req, res) => {
 });
 
 
-app.patch('/tutor/applications/:applicationId/status', async (req, res) => {
+app.patch('/tutor/applications/:applicationId/status', verifyToken, verifyTutor, async (req, res) => {
     try {
         const { applicationId } = req.params;
-        const { teacherId, status } = req.body;
+        const { status } = req.body;
+        const teacherId = req.user._id.toString();
         const allowedStatuses = ['pending', 'accepted', 'rejected'];
 
         if (!ObjectId.isValid(applicationId)) {
             return res.status(400).send({ success: false, message: 'Invalid application ID' });
         }
-        if (!teacherId || !allowedStatuses.includes(status)) {
-            return res.status(400).send({ success: false, message: 'A tutor ID and valid status are required' });
+        if (!allowedStatuses.includes(status)) {
+            return res.status(400).send({ success: false, message: 'A valid status is required' });
         }
 
         const result = await applications.updateOne(
@@ -779,18 +912,14 @@ app.patch('/tutor/applications/:applicationId/status', async (req, res) => {
     }
 });
 
-app.delete('/tutor/applications/:applicationId', async (req, res) => {
+app.delete('/tutor/applications/:applicationId', verifyToken, verifyTutor, async (req, res) => {
     try {
         const { applicationId } = req.params;
-        const { teacherId } = req.body;
+        const teacherId = req.user._id.toString();
 
         if (!ObjectId.isValid(applicationId)) {
             return res.status(400).send({ success: false, message: 'Invalid application ID' });
         }
-        if (!teacherId) {
-            return res.status(400).send({ success: false, message: 'A tutor ID is required' });
-        }
-
         const result = await applications.deleteOne({
             _id: new ObjectId(applicationId),
             teacherId
@@ -813,3 +942,5 @@ app.get('/', (req, res) => {
 app.listen(port, () => {
     console.log(`Example app listening on port ${port}`)
 })  
+
+export default app;
