@@ -85,6 +85,15 @@ async function getTransactionsByRole(role, res) {
 app.get('/admin/transactions/students', (req, res) => getTransactionsByRole('student', res));
 app.get('/admin/transactions/tutors', (req, res) => getTransactionsByRole('tutor', res));
 
+app.get('/admin/applications/count', async (req, res) => {
+    try {
+        const total = await applications.countDocuments();
+        res.send({ success: true, total });
+    } catch (error) {
+        res.status(500).send({ success: false, message: 'Failed to get application count' });
+    }
+});
+
 
 
 async function getTutorTuitionUsage(teacherId) {
