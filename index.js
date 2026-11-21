@@ -45,6 +45,20 @@ const authIssuer = process.env.BETTER_AUTH_URL?.split('#')[0].trim().replace(/\/
 const jwksUrl = process.env.AUTH_JWKS_URL || (authIssuer ? `${authIssuer}/api/auth/jwks` : null);
 const jwks = jwksUrl ? createRemoteJWKSet(new URL(jwksUrl)) : null;
 
+async function getOpenTuitionIds(tuitionIds) {
+    const ids = [...new Set(tuitionIds)]
+        .filter((id) => ObjectId.isValid(id))
+        .map((id) => new ObjectId(id));
+    if (!ids.length) return new Set();
+
+    const openTuitions = await tuitions.find({
+        _id: { $in: ids },
+        approvalStatus: 'approved',
+        isActive: { $ne: false },
+    }, { projection: { _id: 1 } }).toArray();
+    return new Set(openTuitions.map((tuition) => String(tuition._id)));
+}
+
 
 const verifyToken = async (req, res, next) => {
     const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
@@ -742,10 +756,16 @@ app.get('/student/applications/:studentId', verifyToken, verifyStudent, async (r
         if (studentId !== req.user._id.toString()) {
             return res.status(403).send({ success: false, message: 'Forbidden' });
         }
-        const result = await applications
+        const studentApplications = await applications
             .find({ studentId })
             .sort({ createdAt: -1 })
             .toArray();
+        const openTuitionIds = await getOpenTuitionIds(
+            studentApplications.map((application) => application.tuitionId),
+        );
+        const result = studentApplications.filter((application) =>
+            openTuitionIds.has(application.tuitionId),
+        );
         const tutorIds = [...new Set(result.map((application) => application.teacherId).filter(Boolean))];
         const tutors = await users.find({ _id: { $in: tutorIds } }).project({ name: 1 }).toArray();
         const tutorNames = new Map(tutors.map((tutor) => [String(tutor._id), tutor.name]));
@@ -807,8 +827,15 @@ app.get('/student/application-count/:studentId', verifyToken, verifyStudent, asy
         );
         if (!user) return res.status(404).send({ success: false, message: 'Student not found' });
 
-        const [counts] = await applications.aggregate([
-            { $match: { studentId } },
+        const studentApplications = await applications.find(
+            { studentId },
+            { projection: { tuitionId: 1 } },
+        ).toArray();
+        const openTuitionIds = await getOpenTuitionIds(
+            studentApplications.map((application) => application.tuitionId),
+        );
+        const [counts] = openTuitionIds.size ? await applications.aggregate([
+            { $match: { studentId, tuitionId: { $in: [...openTuitionIds] } } },
             {
                 $group: {
                     _id: null,
@@ -820,7 +847,7 @@ app.get('/student/application-count/:studentId', verifyToken, verifyStudent, asy
                 },
             },
             { $project: { _id: 0 } },
-        ]).toArray();
+        ]).toArray() : [];
 
         const isPro = user.plan === 'pro';
         const limit = isPro ? null : 2;
@@ -894,10 +921,16 @@ app.post('/applications', verifyToken, verifyStudent, async (req, res) => {
         }
 
         if (student.plan !== 'pro') {
-            const activeCount = await applications.countDocuments({
+            const activeRequests = await applications.find({
                 studentId,
                 status: { $in: ['pending', 'accepted'] },
-            });
+            }, { projection: { tuitionId: 1 } }).toArray();
+            const openTuitionIds = await getOpenTuitionIds(
+                activeRequests.map((application) => application.tuitionId),
+            );
+            const activeCount = activeRequests.filter((application) =>
+                openTuitionIds.has(application.tuitionId),
+            ).length;
             if (activeCount >= 2) {
                 return res.status(403).send({
                     success: false,
